@@ -1,0 +1,34 @@
+name: Arduino Firmware CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install board core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:mbed_nano
+
+      - name: Install libraries
+        run: |
+          arduino-cli lib update-index
+          arduino-cli lib install "HX711" "Adafruit NeoPixel" "ArduinoBLE"
+
+      - name: Compile firmware
+        run: |
+          arduino-cli compile \
+            --fqbn arduino:mbed_nano:nano33ble \
+            .
