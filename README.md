@@ -12,7 +12,7 @@ Firmware for a **BLE-enabled smart coaster** based on the **Arduino Nano 33 BLE*
 
 It measures cup weight via a load cell + HX711, detects **drinks and refills**, and sends compact BLE events to the Android companion app. The NeoPixel ring provides immediate visual feedback so patients know the system is working without looking at a screen.
 
-Scales were tested by 8 patients within a clinical pilot.
+Evaluated in a clinical pilot with 8 patients.
 
 Developed as part of my Bachelor's thesis in Information Systems at TUM. 
 
@@ -57,9 +57,9 @@ Developed as part of my Bachelor's thesis in Information Systems at TUM.
 
 The firmware tares an empty cup at startup, then continuously monitors weight changes to classify events:
 
-- **Intake** — weight drops by more than 15g (patient drank).
-- **Refill** — weight increases by more than 30g (staff refilled the cup).
-- **Cup removed** — weight falls below tare minus 30g margin.
+- **Intake** — weight drops by more than 15 g.
+- **Refill** — weight increases by more than 30 g.
+- **Cup removed** — weight falls below `tare - 30 g`.
 
 All readings pass through `waitForStableReadingRaw()` which takes multiple HX711 samples and checks for small deltas between them, filtering out sensor noise and transient vibrations.
 
@@ -82,6 +82,14 @@ All LED animations call `BLE.poll()` inside their loops to keep the Bluetooth li
 
 The firmware exposes a custom BLE service with two characteristics — one for sending events to the Android app (notify), one for receiving commands (write). The Android app maintains up to three parallel connections, one per coaster.
 
+### Event Buffering
+
+Since clinical staff may move out of Bluetooth range of the Android monitoring device, the firmware implements a circular ring buffer with a 30-event capacity to ensure no data loss.
+
+1. **Store:** intakes and refills are queued in the nRF52840 SRAM while the connection is lost.
+2. **Sync:** when the Android monitoring device reconnects and subscribes to notifications, the buffer flushes all pending events.
+3. **Throttle:** during sync, buffered messages are sent every 1000 ms to avoid flooding the Android BLE stack, ensuring every packet is received and processed.
+
 ---
 
 ## BLE Protocol
@@ -96,7 +104,7 @@ The firmware exposes a custom BLE service with two characteristics — one for s
 
 ### Data Format
 
-**Scale to Android** (TX characteristic, ASCII):
+**Coaster to Android** (TX characteristic, ASCII):
 
 ```text
 I 45.23 a     # Intake of 45.23 g from cup "a"
@@ -105,9 +113,9 @@ R 32.10 a     # Refill of 32.10 g for cup "a"
 
 - `I` = intake (patient drank), `R` = refill (staff topped up)
 - `amount` = grams of water
-- `cup` = cup identifier (single char)
+- `cup` = cup identifier (single character)
 
-**Android to Scale** (RX characteristic, 1 byte):
+**Android to Coaster** (RX characteristic, 1 byte):
 
 - `0x01` — triggers `flashMultiColor5Times()` reminder animation.
 
@@ -124,10 +132,10 @@ float storedScaleFactor = -1095.25;
 
 | Threshold | Value | Purpose |
 |-----------|-------|---------|
-| `MIN_CUP_WEIGHT` | 200g | Rejects unrealistically light cups during tare |
-| `DRINK_SENSITIVITY` | 15g | Weight drop larger than this triggers intake event |
-| `REFILL_SENSITIVITY` | 30g | Weight increase larger than this triggers refill event |
-| `CUP_REMOVED_MARGIN` | 30g | Weight below (tare - margin) triggers cup-removed state |
+| `MIN_CUP_WEIGHT` | 200 g | Rejects unrealistically light cups during tare |
+| `DRINK_SENSITIVITY` | 15 g | Weight drop larger than this triggers intake event |
+| `REFILL_SENSITIVITY` | 30 g | Weight increase larger than this triggers refill event |
+| `CUP_REMOVED_MARGIN` | 30 g | Weight below (tare - margin) triggers cup-removed state |
 
 ---
 
@@ -166,15 +174,13 @@ Adjust the port as needed for your system.
 | **Adafruit NeoPixel** | RGB LED ring control for status animations |
 | **ArduinoBLE** | BLE GATT server with custom service and characteristics |
 
-All weight stabilization logic, event classification (intake/refill/cup removed), BLE payload formatting, and LED animation patterns are implemented manually.
+Weight stabilization logic, event classification, circular data buffering, BLE payload formatting, reconnection strategy, and LED animation patterns are implemented manually.
 
 ---
 
 ## Companion App
 
-This firmware is designed to work with the Android companion app:
-
-[github.com/vladyslavm-dev/smart-coaster-android](https://github.com/vladyslavm-dev/smart-coaster-android)
+This firmware is designed to work with the Android companion app: [github.com/vladyslavm-dev/smart-coaster-android](https://github.com/vladyslavm-dev/smart-coaster-android)
 
 The Android app maintains three parallel BLE connections, parses the event messages, aggregates intake per patient with time-windowed summaries, and exports data as CSV.
 
@@ -182,7 +188,7 @@ The Android app maintains three parallel BLE connections, parses the event messa
 
 ## Possible Extensions
 
-- Add BLE-accessible calibration mode (eliminate hardcoded offset/scale factor).
+- Add BLE-accessible calibration mode to eliminate hardcoded offset factor.
 - Support multiple cup profiles with different tare values.
 - Add battery level reporting via BLE for wireless deployments.
 
